@@ -1,0 +1,5 @@
+kubectl -n vshow delete pod vshow-main --force --grace-period 0 2>/dev/null
+docker image build . -t singjoh/vshow:latest
+kubectl -n vshow apply -f ../k8s/vshow.pod.yaml
+sleep 5
+kubectl -n vshow logs vshow-main --follow

@@ -1,0 +1,16 @@
+Forwarding from 127.0.0.1:8080 -> 8080
+Forwarding from [::1]:8080 -> 8080
+Handling connection for 8080
+Handling connection for 8080
+Handling connection for 8080
+Handling connection for 8080
+Handling connection for 8080
+Handling connection for 8080
+Handling connection for 8080
+Handling connection for 8080
+Handling connection for 8080
+Handling connection for 8080
+Handling connection for 8080
+Handling connection for 8080
+E0424 18:57:15.256182    7356 portforward.go:409] an error occurred forwarding 8080 -> 8080: error forwarding port 8080 to pod 45de34734de4478c59d73156dbd90346e4ef0dc880a5bda24864557149e182e9, uid : container not running (45de34734de4478c59d73156dbd90346e4ef0dc880a5bda24864557149e182e9)
+error: lost connection to pod

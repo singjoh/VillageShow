@@ -1,0 +1,5 @@
+sqlalchemy
+sqlalchemy_utils
+psycopg2
+nicegui==1.4.18
+python-docx

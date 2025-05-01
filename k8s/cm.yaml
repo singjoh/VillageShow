@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vshow-config
+data:
+  DB_NAME: 'vshow'
+  DB_USER: 'postgres'
+  DB_PORT: '5432'
+  DB_SERVER: 'db-postgresql'
+

@@ -1,0 +1,41 @@
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+
+## @param extraDeploy Array of extra objects to deploy with the release (evaluated as a template)
+extraDeploy: []
+
+image:
+  registry: docker.io
+  repository: bitnami/postgresql
+  tag: 12.4.0-debian-10-r77
+  digest: ""
+  pullPolicy: IfNotPresent
+  debug: false
+
+## Authentication parameters
+## ref: https://github.com/bitnami/containers/tree/main/bitnami/postgresql#setting-the-root-password-on-first-run
+## ref: https://github.com/bitnami/containers/tree/main/bitnami/postgresql#creating-a-database-on-first-run
+## ref: https://github.com/bitnami/containers/tree/main/bitnami/postgresql#creating-a-database-user-on-first-run
+##
+auth:
+  enablePostgresUser: true
+  postgresPassword: postgres
+
+# primary: 
+#  pgHbaConfiguration: |-
+#    local all all trust
+#    host all all localhost trust
+ 
+usePasswordFiles: false
+architecture: standalone
+
+containerPorts:
+  postgresql: 5432
+tls:
+  enabled: false
+primary:
+  service:
+    type: NodePort
+  persistence:
+    existingClaim: "pvc-db"
