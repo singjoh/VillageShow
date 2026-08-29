@@ -288,7 +288,7 @@ class JudgesPage():
             LOGGER.info(f'Calling update_judge_item with {display_order}, {medal}, {key}')
             self.judges.update_judge_item(self.jbox.value, display_order, medal, key)
         else:
-            ui.notify(f'Invalid - "{key}" not in [{', '.join(valid_keys)}]')
+            ui.notify(f'Invalid - "{key}" not in [{", ".join(valid_keys)}]')
             e.sender.value = ''
 
     def __enter_cup__(self, e):
@@ -311,7 +311,7 @@ class JudgesPage():
                 LOGGER.info(f'Calling update_judge_cup with {cup}, {value}')
                 self.judges.update_judge_cup(self.jbox.value, cup, field, value)
             else:
-                ui.notify(f'Invalid - "{value}" not in [{', '.join(valid_keys)}]')
+                ui.notify(f'Invalid - "{value}" not in [{", ".join(valid_keys)}]')
                 e.sender.value = ''
         else:
             self.judges.update_judge_cup(self.jbox.value, cup, field, value)

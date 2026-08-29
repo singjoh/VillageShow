@@ -1,20 +1,43 @@
 ingress:
   enabled: true
-  annotations: 
+  annotations:
     kubernetes.io/ingress.class: "nginx"
   hosts:
     - host: pgadmin.local
       paths:
         - path: /
           pathType: Prefix
+
 image:
   registry: docker.io
   repository: dpage/pgadmin4
-  tag: 4.25
+  tag: "6.21"
 
 env:
-  email: pgadmin
+  email: pgadmin@example.com
   password: evspassword
+  SCRIPT_NAME: /pgadmin4
+
 persistentVolume:
   size: 1Gi
   existingClaim: pvc-pga
+  mountPath: /var/lib/pgadmin
+
+podSecurityContext:
+  fsGroup: 5050
+  runAsUser: 5050
+  runAsNonRoot: true
+
+initContainers:
+  - name: fix-permissions
+    image: alpine:3.18
+    command:
+      - sh
+      - -c
+      - |
+        mkdir -p /var/lib/pgadmin
+        chown -R 5050:5050 /var/lib/pgadmin 2>/dev/null || true
+        chmod -R 700 /var/lib/pgadmin 2>/dev/null || true
+    volumeMounts:
+      - name: pgadmin-data
+        mountPath: /var/lib/pgadmin

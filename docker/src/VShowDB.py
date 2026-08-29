@@ -253,6 +253,136 @@ class vShowDB():
         sql = "delete from vshow.villager where name = :name"
         self.execute_sql((sql,params))
 
+    def __get_existing_entries(self, name):
+        """Get existing entries for a villager in current year, grouped by category."""
+        sql = """
+        select ca.name, ca.is_child
+        from vshow.current_year cy
+        join vshow.entrant e on e.year_id = cy.year_id
+        join vshow.villager v on v.id = e.villager_id
+        join vshow.entry ey on ey.entrant_id = e.id
+        join vshow.class cl on cl.id = ey.class_id
+        join vshow.category ca on ca.id = cl.category_id
+        where v.name = :name
+        order by ca.name, ca.is_child
+        """
+        params = {"name": name}
+        results = list(self.execute_sql((sql, params)))
+        return results
+
+    def __parse_entry_name(self, entry_name):
+        """Parse entry name into category name and is_child flag."""
+        parts = entry_name.split(': ')
+        if len(parts) < 2:
+            return None, False
+        catname = parts[1]
+        is_child = False
+        if catname.endswith(' (child)'):
+            is_child = True
+            catname = catname[:-8]
+        return catname, is_child
+
+    def __delete_entry_by_category(self, name, catname, is_child):
+        """Delete one entry for a villager in a specific category."""
+        sql = """
+        delete from vshow.entry
+        where id = (
+            select ey.id
+            from vshow.current_year cy
+            join vshow.entrant e on e.year_id = cy.year_id
+            join vshow.villager v on v.id = e.villager_id
+            join vshow.entry ey on ey.entrant_id = e.id
+            join vshow.class cl on cl.id = ey.class_id
+            join vshow.category ca on ca.id = cl.category_id
+            where v.name = :name
+            and ca.name = :catname
+            and ca.is_child = :is_child
+            limit 1
+        )
+        """
+        params = {"name": name, "catname": catname, "is_child": is_child}
+        self.execute_sql((sql, params))
+
+    def __assign_hash_to_unhashed_entries(self, name):
+        """Assign hashes to any unhashed entries for this villager in current year."""
+        sql = """
+        update vshow.entry e
+        set hash = unused.hash
+        from (
+          select row_number() over (order by all_hashes.c) row_num, all_hashes.hash
+          from (
+            select c1.i * 10 + c2.i c, substring(y.c from c1.i for 1) || substring(y.c from c2.i for 1) as hash
+            from ( select 'aAbBcdDeEfgGhHjklmnoPqQrRstTuvwxy2346789' as c ) as y
+            cross join (select i from generate_series(1,40) as t(i)) as c1
+            cross join (select i from generate_series(1,40) as t(i)) as c2
+          ) as all_hashes
+          left join (select e2.hash
+            from vshow.entry e2
+            join vshow.entrant et
+              on et.id = e2.entrant_id
+            join vshow.current_year cy
+              on cy.year_id = et.year_id
+          ) as e2
+            on e2.hash = all_hashes.hash
+          where e2.hash is null
+        ) as unused
+        join (
+          select row_number() over (order by e3.id) row_num, e3.id
+          from vshow.entry e3
+          join vshow.entrant et
+            on et.id = e3.entrant_id
+          join vshow.villager v
+            on v.id = et.villager_id
+          join vshow.current_year cy
+            on cy.year_id = et.year_id
+          where v.name = :name and e3.hash is null
+        ) as x
+          on x.row_num = unused.row_num
+        where e.id = x.id
+        """
+        params = {"name": name}
+        self.execute_sql((sql, params))
+
+    def upsert_entries(self, name, items):
+        """Upsert entries: add new ones, delete removed ones, keep existing.
+        Automatically assigns hashes to newly created entries."""
+        LOGGER.info(f'Upserting entries for {name}: {items}')
+
+        # Get existing entries from database
+        existing = self.__get_existing_entries(name)
+
+        # Parse on-page entries
+        page_entries = []
+        for item in items:
+            catname, is_child = self.__parse_entry_name(item.name)
+            if catname:
+                page_entries.append((catname, is_child))
+
+        # Count occurrences in page and database
+        from collections import Counter
+        page_counts = Counter(page_entries)
+        existing_counts = Counter(existing)
+
+        # Delete entries that are no longer on page
+        for (catname, is_child), existing_count in existing_counts.items():
+            page_count = page_counts.get((catname, is_child), 0)
+            if existing_count > page_count:
+                for _ in range(existing_count - page_count):
+                    self.__delete_entry_by_category(name, catname, is_child)
+
+        # Insert new entries that are on page but not in database
+        with open(f'{self._scriptdir}/insert_entry.sql') as fh:
+            insert_sql = fh.read()
+        for (catname, is_child), page_count in page_counts.items():
+            existing_count = existing_counts.get((catname, is_child), 0)
+            if page_count > existing_count:
+                for _ in range(page_count - existing_count):
+                    params = {"name": name, "catname": catname, "is_child": is_child}
+                    self.execute_sql((insert_sql, params))
+
+        # Automatically assign hashes to any newly created unhashed entries
+        self.__assign_hash_to_unhashed_entries(name)
+
     def upsert_villager(self, name, age, items):
         LOGGER.info(f'Saving {name}/{age} - {items}')
         params = {"name": name, "age": age, "year_id": None}
@@ -269,30 +399,22 @@ class vShowDB():
             sql = "insert into vshow.villager(name, year_id_of_majority) values (:name, :year_id)"
         self.execute_sql((sql,params))
 
-        # delete entries
-        params["del_entrant"] = (len(items) == 0)
-        with open(f'{self._scriptdir}/delete_entries.sql') as fh:
-            sql = fh.read()
-        self.execute_sql((sql,params))
-
+        # Handle entries with upsert logic instead of delete-and-recreate
         if len(items) == 0:
+            # Delete all entries for this villager in current year
+            params["del_entrant"] = True
+            with open(f'{self._scriptdir}/delete_entries.sql') as fh:
+                sql = fh.read()
+            self.execute_sql((sql, params))
             return
 
-        # create entrant
+        # Create entrant if needed
         with open(f'{self._scriptdir}/upsert_entrant.sql') as fh:
             sql = fh.read()
-        self.execute_sql((sql,params))
+        self.execute_sql((sql, params))
 
-        with open(f'{self._scriptdir}/insert_entry.sql') as fh:
-            sql = fh.read()
-        for item in items:
-            catname = item.name.split(': ')[1]
-            is_child = False
-            if catname[-8:] == ' (child)':
-                is_child = True
-                catname = catname[:-8]
-            params = {"name": name, "catname": catname, "is_child": is_child}
-            self.execute_sql((sql,params))
+        # Upsert entries (add/delete as needed, keep existing)
+        self.upsert_entries(name, items)
 
     # Categories
     def get_categories(self):
@@ -305,11 +427,6 @@ class vShowDB():
         with open(f'{self._scriptdir}/get_entries.sql') as fh:
             sql = fh.read()
         return list(self.execute_sql(sql))
-
-    def set_entry_hashes(self):
-        with open(f'{self._scriptdir}/set_entry_hashes.sql') as fh:
-            sql = fh.read()
-        self.execute_sql(sql)
 
     def adjust_entry(self, ref, num):
         with open(f'{self._scriptdir}/adjust_entry.sql') as fh:
@@ -351,4 +468,15 @@ class vShowDB():
         with open(f'{self._scriptdir}/get_category_counts.sql') as fh:
             sql = fh.read()
         return list(self.execute_sql(sql))
+
+    def get_villagers_with_entries(self):
+        sql = """
+        select distinct v.name
+        from vshow.current_year cy
+        join vshow.entrant e on e.year_id = cy.year_id
+        join vshow.villager v on v.id = e.villager_id
+        join vshow.entry ey on ey.entrant_id = e.id
+        order by v.name
+        """
+        return [row[0] for row in self.execute_sql(sql)]
 

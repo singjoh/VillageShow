@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: db-postgresql
+  namespace: vshow
+  labels:
+    app: postgresql
+    release: db
+spec:
+  serviceName: db-postgresql
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgresql
+      release: db
+  template:
+    metadata:
+      labels:
+        app: postgresql
+        release: db
+    spec:
+      securityContext:
+        fsGroup: 999
+      containers:
+      - name: postgresql
+        image: docker.io/postgres:12.18-alpine
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: tcp-postgresql
+          containerPort: 5432
+        env:
+        - name: PGDATA
+          value: /var/lib/postgresql/data
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-postgresql
+              key: postgresql-password
+        - name: POSTGRES_DB
+          value: vshow
+        - name: POSTGRES_USER
+          value: postgres
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - exec pg_isready -U postgres -d vshow -h 127.0.0.1 -p 5432
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - exec pg_isready -U postgres -d vshow -h 127.0.0.1 -p 5432
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+          subPath: data
+        - name: dshm
+          mountPath: /dev/shm
+      volumes:
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 1Gi
+      - name: data
+        persistentVolumeClaim:
+          claimName: pvc-db

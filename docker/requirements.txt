@@ -1,5 +1,5 @@
 sqlalchemy
 sqlalchemy_utils
-psycopg2
+psycopg2-binary
 nicegui==1.4.18
 python-docx

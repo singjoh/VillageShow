@@ -15,6 +15,7 @@ from adjustentrypage import AdjustEntryPage
 from local_file_picker import local_file_picker
 from year_picker import year_picker
 from are_you_sure import are_you_sure
+from reprint_stickers_dialog import ReprintStickersDialog
 
 logFormatter = logging.Formatter("%(asctime)s [%(levelname)-5.5s] {%(name)s} %(message)s")
 consoleHandler = logging.StreamHandler()
@@ -103,26 +104,6 @@ async def reset_year(db, year, pages):
     db.reset_year()
     refresh_pages(pages)
     ui.notify(f'Year {year} has been cleared.')
-
-async def set_entry_hashes(db, pages):
-    reason = ( "Refresh Entry Hashes\n"
-               "Any villager with changed data will get "
-               "a new set of hashes, clearing any related "
-               "judging data. All other hashes and judge "
-               "data will be unchanged.\n"
-               "Entry docs and stickers for the changed users "
-               "will need to be reprinted.\n"
-               "Please confirm you want to continue ..."
-              )
-    x = await are_you_sure(reason)
-    if not x:
-        ui.notify('GENERATE ENTRY KEYS - cancelled')
-        return
-
-    db.set_entry_hashes()
-    # db.clear_medal_codes()
-    refresh_pages(pages)
-    ui.notify('Entry hash codes haved been applied')
 
 async def export_friday_data(db):
 
@@ -224,6 +205,43 @@ async def export_friday_data(db):
     except Exception as x:
         LOGGER.exception(x)
         ui.notify(f'Problem writing files - {x}')
+
+async def reprint_stickers(db):
+    try:
+        available = db.get_villagers_with_entries()
+        if not available:
+            ui.notify('No villagers with entries found')
+            return
+
+        dialog = ReprintStickersDialog(available)
+        selected = await dialog
+
+        if not selected:
+            ui.notify('No villagers selected for reprint')
+            return
+
+        # Get all entry hashes and filter to selected villagers
+        data = db.get_entry_hashes()
+
+        with open(f'/data/out/stickers.csv', 'w') as sfh, \
+             open(f'/data/out/labels.csv', 'w') as lfh:
+
+            lfh.write('Name\n')
+            sfh.write('ClassNum,ClassName,EntryRef\n')
+
+            written_names = set()
+            for name, display_order, classname, ref, _ in data:
+                if name in selected:
+                    if name not in written_names:
+                        lfh.write(f'{name}\n')
+                        written_names.add(name)
+                    sfh.write(f'{display_order},"{classname}",{ref}\n')
+
+        ui.notify(f'Wrote stickers.csv and labels.csv')
+
+    except Exception as x:
+        LOGGER.exception(x)
+        ui.notify(f'Problem with reprint - {x}')
 
 async def export_saturday_data(db):
     def nice(s: str):
@@ -345,8 +363,8 @@ def display_tabs(db):
             ui.button('Clear Year', on_click=lambda: reset_year(db, year_label.text, pages))
             ui.button('Reset Pages', on_click=lambda: refresh_pages(pages))
             ui.button('Import classes', on_click=lambda: import_classes(db, pages))
-            ui.button('Generate Entry Keys', on_click=lambda: set_entry_hashes(db, pages))
             ui.button('Export Pre-Show files', on_click=lambda: export_friday_data(db))
+            ui.button('Re-export Selected Villagers', on_click=lambda: reprint_stickers(db))
             ui.button('Export Post-Show files', on_click=lambda: export_saturday_data(db))
 
     with ui.page_sticky(position='bottom-right', x_offset=20, y_offset=20):

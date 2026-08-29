@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test
+  namespace: vshow
+spec:
+  containers:
+  - args:
+    - "-c"
+    - "sleep 3600"
+    command: ["/bin/sh"]
+    image: alpine:3.19
+    name: base
+    volumeMounts:
+      - mountPath: /data/vshow/dynamic
+        name: dstorage
+      - mountPath: /data/vshow/static
+        name: sstorage
+  restartPolicy: Never
+  volumes:
+    - name: sstorage
+      persistentVolumeClaim: 
+        claimName: pvc-hostpath
+    - name: dstorage
+      persistentVolumeClaim: 
+        claimName: pvc-dynamic
